@@ -17,3 +17,6 @@ CMakeFiles/
 *.cmake
 Makefile
 Testing/
+
+#execuables
+*.exe
