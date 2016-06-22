@@ -18,6 +18,7 @@ namespace quasi_succinct {
         wand_data(LengthsIterator len_it, uint64_t num_docs,
                   binary_freq_collection const& coll)
         {
+        	// normalize the lengths
             std::vector<float> norm_lens(num_docs);
             double lens_sum = 0;
             logger() << "Reading sizes..." << std::endl;

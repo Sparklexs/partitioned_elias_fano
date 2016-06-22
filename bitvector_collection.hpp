@@ -32,6 +32,8 @@ namespace quasi_succinct {
                 succinct::bit_vector(&m_bitvectors).swap(sq.m_bitvectors);
 
                 succinct::bit_vector_builder bvb;
+                // 注意该builder所write的是std::vector<uint64_t> m_endpoints
+                // 写入的全部是bitvector的长度而已
                 compact_elias_fano::write(bvb, m_endpoints.begin(),
                                           m_bitvectors.size(), sq.m_size,
                                           m_params);
@@ -54,6 +56,10 @@ namespace quasi_succinct {
             return m_bitvectors;
         }
 
+        /* song: return the endpoint of the i-th bitvector
+         * in the form <bitvectors, endpoint>
+         * note bitvectors contains all the vectors
+         * endpoint actully is the start point as 0 is the 1st element */
         succinct::bit_vector::enumerator
         get(global_parameters const& params, size_t i) const
         {

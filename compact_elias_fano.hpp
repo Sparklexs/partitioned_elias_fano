@@ -21,6 +21,7 @@ namespace quasi_succinct {
                     global_parameters const& params)
                 : universe(universe)
                 , n(n)
+            	// unary code中0和1的采样间隔，0表示间隔符，1计数符
                 , log_sampling0(params.ef_log_sampling0)
                 , log_sampling1(params.ef_log_sampling1)
 
@@ -43,15 +44,15 @@ namespace quasi_succinct {
 
             uint64_t universe;
             uint64_t n;
-            uint64_t log_sampling0;
-            uint64_t log_sampling1;
+            uint64_t log_sampling0;//0的采样间隔
+            uint64_t log_sampling1;//1的采样间隔
 
-            uint64_t lower_bits;
-            uint64_t mask;
-            uint64_t higher_bits_length;
-            uint64_t pointer_size;
-            uint64_t pointers0;
-            uint64_t pointers1;
+            uint64_t lower_bits;//表示一个低位所需的位数
+            uint64_t mask;//获取低位的掩码
+            uint64_t higher_bits_length;//采用unary编码后，所有高位长度的最大值
+            uint64_t pointer_size;//高位指针的长度log(higher_bits_length)
+            uint64_t pointers0;//间隔符采样点个数(log(u / l) + 2) >> log_sampling0
+            uint64_t pointers1;//计数符采样点个数n >> log_sampling1
 
             uint64_t pointers0_offset;
             uint64_t pointers1_offset;
@@ -82,13 +83,17 @@ namespace quasi_succinct {
             uint64_t offset;
 
             // utility function to set 0 pointers
+            // rank_end stands for rank1(end), 即到当前位置1的个数，也就是i
             auto set_ptr0s = [&](uint64_t begin, uint64_t end,
                                  uint64_t rank_end) {
+            	//rank_end实际上非0元素的个数，该函记录的是0的位置
+            	//最后只会产生u/2^l+2个0，也恰好是指针的个数
+                uint64_t begin_zeros = begin - rank_end;//到begin位置0的个数
+                uint64_t end_zeros = end - rank_end;//到end位置0的个数
 
-                uint64_t begin_zeros = begin - rank_end;
-                uint64_t end_zeros = end - rank_end;
-
-                for (uint64_t ptr0 = ceil_div(begin_zeros, uint64_t(1) << of.log_sampling0);
+                //end_zeros要大于0的采样数目才会进入for-loop
+                for (uint64_t ptr0 = ceil_div(begin_zeros,
+                		uint64_t(1) << of.log_sampling0);
                      (ptr0 << of.log_sampling0) < end_zeros;
                      ++ptr0) {
                     if (!ptr0) continue;
@@ -108,13 +113,15 @@ namespace quasi_succinct {
                     throw std::runtime_error("Sequence is not sorted");
                 }
                 assert(v < universe);
+                // 这里+i+1表示向对应位置插入1，用于计数排序
                 uint64_t high = (v >> of.lower_bits) + i + 1;
                 uint64_t low = v & of.mask;
-
+                /*写入高位*/
                 bvb.set(of.higher_bits_offset + high, 1);
 
                 offset = of.lower_bits_offset + i * of.lower_bits;
                 assert(offset + of.lower_bits <= of.end);
+                /*写入低位*/
                 bvb.set_bits(offset, low, of.lower_bits);
 
                 if (i && (i & sample1_mask) == 0) {
@@ -122,6 +129,7 @@ namespace quasi_succinct {
                     assert(ptr1 > 0);
                     offset = of.pointers1_offset + (ptr1 - 1) * of.pointer_size;
                     assert(offset + of.pointer_size <= of.higher_bits_offset);
+                    /*定长采样高位，注意写入的高位实际上是+i+1之后的*/
                     bvb.set_bits(offset, high, of.pointer_size);
                 }
 
@@ -152,6 +160,7 @@ namespace quasi_succinct {
                 , m_value(m_of.universe)
             {}
 
+            // position's range is [0,n]
             value_type move(uint64_t position)
             {
                 assert(position <= m_of.n);
@@ -217,20 +226,23 @@ namespace quasi_succinct {
             {
                 return m_of.n;
             }
-
+            /* returns the next value when current position is
+             * in the range of 0 to n-1, returns the universe
+             * if current position is n */
             value_type next()
             {
                 m_position += 1;
                 assert(m_position <= size());
 
                 if (QS_LIKELY(m_position < size())) {
-                    m_value = read_next();
+                    m_value = read_currentPos();
                 } else {
                     m_value = m_of.universe;
                 }
                 return value();
             }
 
+            /*previous value*/
             uint64_t prev_value() const
             {
                 if (m_position == 0) {
@@ -276,6 +288,7 @@ namespace quasi_succinct {
                 } else {
                     uint64_t ptr = position >> m_of.log_sampling1;
                     uint64_t high_pos = pointer1(ptr);
+                    // 当前指针指向的元素index，也就是目前元素的个数
                     uint64_t high_rank = ptr << m_of.log_sampling1;
                     m_high_enumerator = succinct::bit_vector::unary_enumerator
                         (*m_bv, m_of.higher_bits_offset + high_pos);
@@ -284,7 +297,7 @@ namespace quasi_succinct {
 
                 m_high_enumerator.skip(to_skip);
                 m_position = position;
-                m_value = read_next();
+                m_value = read_currentPos();
                 return value();
             }
 
@@ -314,6 +327,8 @@ namespace quasi_succinct {
                     m_high_enumerator = succinct::bit_vector::unary_enumerator
                         (*m_bv, m_of.higher_bits_offset + high_pos);
                     to_skip = high_lower_bound - high_rank0;
+                    // note to_skip starts from ptr
+                    // and it is smaller than log_sampling0
                 }
 
                 m_high_enumerator.skip0(to_skip);
@@ -335,8 +350,6 @@ namespace quasi_succinct {
                 }
             }
 
-            static const uint64_t linear_scan_threshold = 8;
-
             inline value_type value() const
             {
                 return value_type(m_position, m_value);
@@ -349,9 +362,13 @@ namespace quasi_succinct {
                     & m_of.mask;
             }
 
-            inline uint64_t read_next()
+            /* 因为m_position在此函数并未被调整，实际上它并不是读取的next
+             * 而是返回当前m_position下的元素值 */
+            inline uint64_t read_currentPos()
             {
                 assert(m_position < size());
+                // m_position即代表当前index下counter（1）的个数
+                // high则是当前index在整个高位序列上的偏移，由于码字从0开始，故还要-1
                 uint64_t high = m_high_enumerator.next() - m_of.higher_bits_offset;
                 return ((high - m_position - 1) << m_of.lower_bits) | read_low();
             }
@@ -374,6 +391,8 @@ namespace quasi_succinct {
 
                 uint64_t operator()()
                 {
+                	// high_base即为高位起始加上position（1的个数）+1
+                	// high就是高位的码字了
                     uint64_t high = high_enumerator.next() - high_base;
                     uint64_t low = bv.get_word56(lower_base) & mask;
                     high_base += 1;
@@ -398,15 +417,21 @@ namespace quasi_succinct {
                 }
             }
 
+            /* i is geq 1
+             * returns the value (position) pointed by i-th pointer0*/
             inline uint64_t pointer0(uint64_t i) const
             {
                 return pointer(m_of.pointers0_offset, i);
             }
 
+            /* i is geq 1
+             * returns the value (position) pointed by i-th pointer1*/
             inline uint64_t pointer1(uint64_t i) const
             {
                 return pointer(m_of.pointers1_offset, i);
             }
+
+            static const uint64_t linear_scan_threshold = 8;
 
             succinct::bit_vector const* m_bv;
             offsets m_of;

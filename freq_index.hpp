@@ -21,8 +21,8 @@ namespace quasi_succinct {
                 : m_queue(1 << 24)
                 , m_params(params)
                 , m_num_docs(num_docs)
-                , m_docs_sequences(params)
-                , m_freqs_sequences(params)
+                , m_docs_collectionBuilder(params)
+                , m_freqs_collectionBuilder(params)
             {}
 
             template <typename DocsIterator, typename FreqsIterator>
@@ -45,8 +45,8 @@ namespace quasi_succinct {
                 sq.m_num_docs = m_num_docs;
                 sq.m_params = m_params;
 
-                m_docs_sequences.build(sq.m_docs_sequences);
-                m_freqs_sequences.build(sq.m_freqs_sequences);
+                m_docs_collectionBuilder.build(sq.m_docs_sequences);
+                m_freqs_collectionBuilder.build(sq.m_freqs_sequences);
             }
 
         private:
@@ -67,40 +67,40 @@ namespace quasi_succinct {
 
                 virtual void prepare()
                 {
-                    write_gamma_nonzero(docs_bits, occurrences);
+                    write_gamma_nonzero(docs_sequenceBuilder, occurrences);
                     if (occurrences > 1) {
-                        docs_bits.append_bits(n, ceil_log2(occurrences + 1));
+                        docs_sequenceBuilder.append_bits(n, ceil_log2(occurrences + 1));
                     }
 
-                    DocsSequence::write(docs_bits, docs_begin,
+                    DocsSequence::write(docs_sequenceBuilder, docs_begin,
                                         b.m_num_docs, n,
                                         b.m_params);
 
-                    FreqsSequence::write(freqs_bits, freqs_begin,
+                    FreqsSequence::write(freqs_sequenceBuilder, freqs_begin,
                                          occurrences + 1, n,
                                          b.m_params);
                 }
 
                 virtual void commit()
                 {
-                    b.m_docs_sequences.append(docs_bits);
-                    b.m_freqs_sequences.append(freqs_bits);
+                    b.m_docs_collectionBuilder.append(docs_sequenceBuilder);
+                    b.m_freqs_collectionBuilder.append(freqs_sequenceBuilder);
                 }
 
                 builder& b;
                 DocsIterator docs_begin;
                 FreqsIterator freqs_begin;
-                uint64_t occurrences;
-                uint64_t n;
-                succinct::bit_vector_builder docs_bits;
-                succinct::bit_vector_builder freqs_bits;
+                uint64_t occurrences; // total number of frequencies
+                uint64_t n; // total number of docids
+                succinct::bit_vector_builder docs_sequenceBuilder;
+                succinct::bit_vector_builder freqs_sequenceBuilder;
             };
 
             semiasync_queue m_queue;
             global_parameters m_params;
-            uint64_t m_num_docs;
-            bitvector_collection::builder m_docs_sequences;
-            bitvector_collection::builder m_freqs_sequences;
+            uint64_t m_num_docs; // universe
+            bitvector_collection::builder m_docs_collectionBuilder;
+            bitvector_collection::builder m_freqs_collectionBuilder;
         };
 
         uint64_t size() const

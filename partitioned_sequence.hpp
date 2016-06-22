@@ -24,6 +24,8 @@ struct partitioned_sequence {
 		assert(n > 0);
 		auto const& conf = configuration::get();
 
+//		fileLogger() << n<<", ";
+
 		//c++11中的lambda匿名函数，[&]表示所有的外部变量都隐式按引用捕获
 		auto cost_fun =
 				[&](uint64_t universe, uint64_t n) {
@@ -112,6 +114,7 @@ struct partitioned_sequence {
 
 			bvb.append(bv_sequences);
 		}
+//		fileLogger() << std::endl;
 	}
 
 	class enumerator {

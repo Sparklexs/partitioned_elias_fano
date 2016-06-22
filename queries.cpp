@@ -36,6 +36,7 @@ void op_perftest(IndexType const& index,
             std::cout << (t / 1000) << std::endl;
         }
     } else {
+    	// now we sort the times used for query
         std::sort(query_times.begin(), query_times.end());
         double avg = std::accumulate(query_times.begin(), query_times.end(), double()) / query_times.size();
         double q50 = query_times[query_times.size() / 2];

@@ -30,6 +30,7 @@ namespace quasi_succinct {
 
             std::vector<uint64_t> cur_partition;
             uint64_t cur_base = 0;
+            // 只有一个分区
             if (partitions == 1) {
                 cur_base = *begin;
                 Iterator it = begin;
@@ -55,6 +56,7 @@ namespace quasi_succinct {
                                           cur_partition.size(),
                                           params);
             } else {
+            	// n个分区
                 succinct::bit_vector_builder bv_sequences;
                 std::vector<uint64_t> endpoints;
                 std::vector<uint64_t> upper_bounds;
@@ -67,6 +69,9 @@ namespace quasi_succinct {
                 for (size_t p = 0; p < partitions; ++p) {
                     cur_partition.clear();
                     uint64_t value = 0;
+
+                    // 分区内每个元素减去base
+                    //base is set to be the previous ub+1 rather than the first element
                     for (; cur_i < ((p + 1) * partition_size) && cur_i < n;
                          ++cur_i, ++it) {
                         value = *it;
@@ -78,15 +83,16 @@ namespace quasi_succinct {
 
                     uint64_t upper_bound = value;
                     assert(cur_partition.size() > 0);
+                    // write each partition of second level
                     base_sequence_type::write(bv_sequences, cur_partition.begin(),
                                               cur_partition.back() + 1,
                                               cur_partition.size(), // XXX skip last one?
                                               params);
                     endpoints.push_back(bv_sequences.size());
                     upper_bounds.push_back(upper_bound);
-                    cur_base = upper_bound + 1;
+                    cur_base = upper_bound + 1;/*which doesn't use the first element of current partition*/
                 }
-
+                // the first level index
                 succinct::bit_vector_builder bv_upper_bounds;
                 compact_elias_fano::write(bv_upper_bounds, upper_bounds.begin(),
                                           universe, partitions + 1,
@@ -140,6 +146,7 @@ namespace quasi_succinct {
 
                     m_cur_upper_bound = m_cur_base + ub;
                 } else {
+                	//m_partition_enum will be instantiated in slow_move() -> switch_partition()
                     m_endpoint_bits = read_gamma(it);
                     uint64_t cur_offset = it.position();
 
@@ -156,7 +163,7 @@ namespace quasi_succinct {
 
                     m_sequences_offset = cur_offset;
                 }
-
+                //XXX why set m_position=size()???
                 m_position = size();
                 slow_move();
             }
@@ -174,7 +181,7 @@ namespace quasi_succinct {
                 return slow_move();
             }
 
-            // note: this is instantiated oly if BaseSequence has next_geq
+            // note: this is instantiated only if BaseSequence has next_geq
             value_type QS_ALWAYSINLINE next_geq(uint64_t lower_bound)
             {
                 if (QS_LIKELY(lower_bound >= m_cur_base && lower_bound <= m_cur_upper_bound)) {
@@ -233,6 +240,9 @@ namespace quasi_succinct {
 
             value_type QS_NOINLINE slow_move()
             {
+            	/* if m_position has not been instantiated yet
+            	 * switch to the last partition
+            	 */
                 if (m_position == size()) {
                     if (m_partitions > 1) {
                         switch_partition(m_partitions - 1);
@@ -269,6 +279,9 @@ namespace quasi_succinct {
                 return next_geq(lower_bound);
             }
 
+            /*switch to the specified partition and
+             * instantiate m_partition_enum to enumerate elements in it
+             * */
             void switch_partition(uint64_t partition)
             {
                 assert(m_partitions > 1);
@@ -286,8 +299,8 @@ namespace quasi_succinct {
 
                 auto ub_it = m_upper_bounds.move(partition + 1);
                 m_cur_upper_bound = ub_it.second;
-                m_cur_base = m_upper_bounds.prev_value() + (partition ? 1 : 0);
 
+                m_cur_base = m_upper_bounds.prev_value() + (partition ? 1 : 0);
                 m_partition_enum = base_sequence_enumerator
                     (*m_bv, m_sequences_offset + endpoint,
                      m_cur_upper_bound - m_cur_base + 1,
@@ -303,12 +316,12 @@ namespace quasi_succinct {
             uint64_t m_size;
             uint64_t m_universe;
 
-            uint64_t m_position;
+            uint64_t m_position; /*pos in current sequence, range [0,n-1], n indicates haven't stated yet*/
             uint64_t m_cur_partition;
-            uint64_t m_cur_begin;
-            uint64_t m_cur_end;
-            uint64_t m_cur_base;
-            uint64_t m_cur_upper_bound;
+            uint64_t m_cur_begin; /*beginning pos of current partition in the sequence*/
+            uint64_t m_cur_end; /*end pos of current partition in the sequence*/
+            uint64_t m_cur_base; /* previous upper bound docid plus 1, not the beginning docid*/
+            uint64_t m_cur_upper_bound; /* end docid of current partition*/
 
             succinct::bit_vector const* m_bv;
             compact_elias_fano::enumerator m_upper_bounds;

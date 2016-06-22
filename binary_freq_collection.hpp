@@ -26,6 +26,7 @@ namespace quasi_succinct {
 
         iterator begin() const
         {
+        	//因为doc文档第一条sequence是文档长度，所以需要++之后才和freq对齐
             auto docs_it = m_docs.begin();
             return iterator(++docs_it, m_freqs.begin());
         }
@@ -45,6 +46,9 @@ namespace quasi_succinct {
             binary_collection::sequence freqs;
         };
 
+        /* iterator_category is std::forward_iterator_tag
+         * value_type is binary_freq_collection::sequence
+         * what the iterator points is a value of sequence */
         class iterator : public std::iterator<std::forward_iterator_tag,
                                               sequence> {
         public:

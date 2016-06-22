@@ -21,7 +21,7 @@ namespace quasi_succinct {
             builder(global_parameters const& params)
                 : m_queue(1 << 24)
                 , m_params(params)
-                , m_sequences(params)
+                , m_sequencesBuilder(params)
             {}
 
             template <typename Iterator>
@@ -33,13 +33,15 @@ namespace quasi_succinct {
                 std::shared_ptr<sequence_adder<Iterator>>
                     ptr(new sequence_adder<Iterator>(*this, begin, last_element, n));
                 m_queue.add_job(ptr, n);
+                // here n denote the actual docids processed by each thread
+                // finer grained than number of partitions or lists
             }
 
             void build(sequence_collection& sq)
             {
                 m_queue.complete();
                 sq.m_params = m_params;
-                m_sequences.build(sq.m_sequences);
+                m_sequencesBuilder.build(sq.m_sequences);
             }
 
         private:
@@ -61,28 +63,28 @@ namespace quasi_succinct {
                     // store approximation of the universe as smallest power of two
                     // that can represent last_element
                     uint64_t universe_bits = ceil_log2(last_element);
-                    write_gamma(bits, universe_bits);
-                    write_gamma_nonzero(bits, n);
-                    IndexedSequence::write(bits, begin,
+                    write_gamma(bitsBuilder, universe_bits);
+                    write_gamma_nonzero(bitsBuilder, n);
+                    IndexedSequence::write(bitsBuilder, begin,
                                            (uint64_t(1) << universe_bits) + 1, n,
                                            b.m_params);
                 }
 
                 virtual void commit()
                 {
-                    b.m_sequences.append(bits);
+                    b.m_sequencesBuilder.append(bitsBuilder);
                 }
 
                 builder& b;
                 Iterator begin;
                 uint64_t last_element;
                 uint64_t n;
-                succinct::bit_vector_builder bits;
+                succinct::bit_vector_builder bitsBuilder;
             };
 
             semiasync_queue m_queue;
             global_parameters m_params;
-            bitvector_collection::builder m_sequences;
+            bitvector_collection::builder m_sequencesBuilder;
         };
 
         size_t size() const

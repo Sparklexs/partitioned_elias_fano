@@ -34,19 +34,19 @@ namespace quasi_succinct {
 
             uint64_t universe;
             uint64_t n;
-            uint64_t log_rank1_sampling;
-            uint64_t log_sampling1;
+            uint64_t log_rank1_sampling; /* rank采样的间隔长度，用对数表示*/
+            uint64_t log_sampling1; /* pointer采样的间隔长度，用对数表示*/
 
-            uint64_t rank1_sample_size;
-            uint64_t pointer_size;
+            uint64_t rank1_sample_size; /*rank值的长度，大小是log2(n+1)，因为刚好有n个位置标为1*/
+            uint64_t pointer_size; /*pointer值的长度，大小是log2(universe+1)，因为位图长度是universe*/
 
-            uint64_t rank1_samples;
-            uint64_t pointers1;
+            uint64_t rank1_samples; /*整个序列中会产生的rank值个数*/
+            uint64_t pointers1; /*整个序列中会产生的pointers1值个数*/
 
-            uint64_t rank1_samples_offset;
-            uint64_t pointers1_offset;
-            uint64_t bits_offset;
-            uint64_t end;
+            uint64_t rank1_samples_offset; /*最开始偏移位置*/
+            uint64_t pointers1_offset; /*排在rank1_samples_offset之后*/
+            uint64_t bits_offset; /*排在pointers1_offset之后*/
+            uint64_t end; /*指向序列结尾的位置*/
         };
 
         static QS_FLATTEN_FUNC uint64_t
@@ -61,7 +61,7 @@ namespace quasi_succinct {
                           uint64_t universe, uint64_t n,
                           global_parameters const& params)
         {
-            using succinct::util::ceil_div;
+            using succinct::util::ceil_div; /*除法，对求得的结果上取整*/
 
             uint64_t base_offset = bvb.size();
             offsets of(base_offset, universe, n, params);
@@ -69,15 +69,19 @@ namespace quasi_succinct {
             bvb.zero_extend(of.end - base_offset);
 
             uint64_t offset;
-
+            // 可能这里的rank是从1开始计数的
+            // 每遇到log_rank1_sampling个位置写一次rank
+            // rank stands for the num of elements
             auto set_rank1_samples = [&](uint64_t begin, uint64_t end,
                                          uint64_t rank) {
+            	/* 这里sample是按照log_rank1_sampling倍数前进的*/
                 for (uint64_t sample = ceil_div(begin, uint64_t(1) << of.log_rank1_sampling);
                      (sample << of.log_rank1_sampling) < end;
                      ++sample) {
                     if (!sample) continue;
                     offset = of.rank1_samples_offset + (sample - 1) * of.rank1_sample_size;
                     assert(offset + of.rank1_sample_size <= of.pointers1_offset);
+                    // 这里也是在sample个偏移位后才写入rank的，中间可能会有很多0
                     bvb.set_bits(offset, rank, of.rank1_sample_size);
                 }
             };
@@ -99,6 +103,7 @@ namespace quasi_succinct {
 
                 bvb.set(of.bits_offset + v, 1);
 
+                // 每log_sampling个元素写一次指针，记录当前ind对应的pos
                 if (i && (i & sample1_mask) == 0) {
                     uint64_t ptr1 = i >> of.log_sampling1;
                     assert(ptr1 > 0);
@@ -106,8 +111,9 @@ namespace quasi_succinct {
                     assert(offset + of.pointer_size <= of.bits_offset);
                     bvb.set_bits(offset, v, of.pointer_size);
                 }
-
-                set_rank1_samples(last + 1, v + 1, i);
+                // 每次循环都调用一次rank，但实际上是否写入要看begin和and之间是否
+                // 到达了sample间隔的长度
+                set_rank1_samples(last + 1, v + 1, i); /*i恰好就是rank值*/
                 last = v;
             }
 
@@ -124,8 +130,8 @@ namespace quasi_succinct {
                        global_parameters const& params)
                 : m_bv(&bv)
                 , m_of(offset, universe, n, params)
-                , m_position(size())
-                , m_value(m_of.universe)
+                , m_position(size())//这里返回的是n
+                , m_value(m_of.universe)//这里返回的是universe
             {}
 
             value_type move(uint64_t position)
@@ -169,6 +175,7 @@ namespace quasi_succinct {
                     // optimize small skips
                     succinct::bit_vector::unary_enumerator he = m_enumerator;
                     uint64_t val;
+                    //这里使用的是慢速的next()和m_position++来实现查找
                     do {
                         m_position += 1;
                         if (QS_LIKELY(m_position < size())) {
@@ -264,6 +271,8 @@ namespace quasi_succinct {
                 uint64_t skip = lower_bound - m_value;
                 m_enumerator = succinct::bit_vector::unary_enumerator
                     (*m_bv, m_of.bits_offset + lower_bound);
+                // 实际上此时read_next()就可以获取到geq的值
+                // 但是需要确定m_position，才有以下操作
 
                 uint64_t begin;
                 if (lower_bound > m_value
@@ -275,6 +284,8 @@ namespace quasi_succinct {
 
                     begin = m_of.bits_offset + (block << m_of.log_rank1_sampling);
                 }
+                // 为什么不使用next()和m_position++来实现查找呢？
+                // 以下方法以word为单位比逐个查找更快
 
                 uint64_t end = m_of.bits_offset + lower_bound;
                 uint64_t begin_word = begin / 64;

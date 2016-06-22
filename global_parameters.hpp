@@ -23,11 +23,11 @@ namespace quasi_succinct {
                 ;
         }
 
-        uint8_t ef_log_sampling0;
-        uint8_t ef_log_sampling1;
-        uint8_t rb_log_rank1_sampling;
-        uint8_t rb_log_sampling1;
-        uint8_t log_partition_size;
+        uint8_t ef_log_sampling0; /* elias-fano 相关参数，0表示间隔符*/
+        uint8_t ef_log_sampling1; /* elias-fano 相关参数，1表示计数符*/
+        uint8_t rb_log_rank1_sampling; /* ranked bitvector 相关参数*/
+        uint8_t rb_log_sampling1; /* ranked bitvector 相关参数*/
+        uint8_t log_partition_size; /* 用于uniform partition的参数*/
     };
 
 }

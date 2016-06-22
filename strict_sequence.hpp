@@ -24,6 +24,7 @@ namespace quasi_succinct {
         static global_parameters strict_params(global_parameters params)
         {
             // we do not need to index the zeros
+        	// 把对0的采样率设成最大，实际上就是不在采样了
             params.ef_log_sampling0 = 63;
             params.rb_log_rank1_sampling = 63;
             return params;

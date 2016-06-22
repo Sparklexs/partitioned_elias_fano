@@ -23,6 +23,7 @@ namespace quasi_succinct {
                 make_function_iterator(std::make_pair(uint64_t(*begin), begin),
                                        [](std::pair<uint64_t, Iterator>& state) {
                                            state.first += *++state.second;
+                                           //mystifying, *(++(state.second))
                                        }, [](std::pair<uint64_t, Iterator> const& state) {
                                            return state.first;
                                        });
